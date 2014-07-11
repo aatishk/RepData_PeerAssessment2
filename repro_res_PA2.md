@@ -253,8 +253,8 @@ head(plotdata)
 ## 137    1.421e+09           18.24        1.51919             19.76
 ## 211    3.026e+09           18.76        0.12853             18.89
 ```
-```
+
 We find that tornadoes have the maximum total number of casualties (both fatalities and injuries). However, tornadoes are ranked number three when we consider the total economic losses. The first two places are taken by flood and hurricane-typhoon. A possible reason can be somewhat longer duration of flood as compared to tornado. Due to the longer duration of the event, the extent of damage is much more leading to higher economic impact.
 
 It is also interesting to note that there are more injuries during flood than flash flood (flood without prior warning) whereas fatalities are more for flash flood as compared to flood (expected since there is less time to react in the event of flash flood). Excessive heat also takes a toll on human population. It's ranked number four for injuries and number two for fatalities.
-```
+
