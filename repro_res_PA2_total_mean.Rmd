@@ -1,0 +1,164 @@
+Reproducible Research Peer Assignment 2
+========================================================
+
+### Title
+Summarizing human and economic losses during severe weather events
+
+### Synopsis
+
+### Data Processing
+The compressed dataset is downloaded into a temporary folder and uncompressed using the *bunzip2* function of **R.utils** package.
+```{r eval=FALSE}
+# load R.utils packages
+library("R.utils")
+````
+```{r cache=TRUE}
+# set the file url 
+fileurl <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
+
+# create a temporary directory
+td = tempdir()
+
+# create the placeholder file
+tf = tempfile(tmpdir=td, fileext=".bz2")
+
+# download into the placeholder file (curl method needed for Mac OS X)
+download.file(fileurl, tf, method="curl")
+
+# fpath is the full path to the extracted file
+fname = "repdata_data_StormData.csv"
+fpath = file.path(td, fname)
+
+# unzip the file to the temporary directory
+bunzip2(tf, destname=fpath, overwrite=TRUE)
+```
+Next, the dataset is loaded in the dataframe **df** and several data cleaning operations are performed as listed below. For example, there are several types of events which are represented by more than one name, such as *TSTM WIND* and *THUNDERSTORM WIND*. 
+```{r cache=TRUE}
+# load the csv in data frame
+df <- read.csv(fpath, as.is=TRUE)
+
+# discard EVTYPE variables containing "Summary" term and store in df2
+df2 <- df[!grepl("Summary", df$EVTYPE), ]
+
+# convert all EVTYPE factors to upper case
+df2$EVTYPE <- toupper(df2$EVTYPE)
+
+# Fix the issue of same EVTYPE having two names
+df2[df2$EVTYPE == "TSTM WIND", ]$EVTYPE = "THUNDERSTORM WIND"
+df2[df2$EVTYPE == "THUNDERSTORM WINDS", ]$EVTYPE = "THUNDERSTORM WIND"
+df2[df2$EVTYPE == "RIVER FLOOD", ]$EVTYPE = "FLOOD"
+df2[df2$EVTYPE == "HURRICANE/TYPHOON", ]$EVTYPE = "HURRICANE-TYPHOON"
+df2[df2$EVTYPE == "HURRICANE", ]$EVTYPE = "HURRICANE-TYPHOON"
+
+# convert EVTYPE from character to factor
+df2$EVTYPE <- as.factor(df2$EVTYPE)
+```
+To calculate the economic costs, we need to assess the property and crop damage due to a severe weather event. In the data set, the amount and the units of the damage are present in different columns. The amounts in *PROPDMG* and *CROPDMG* are scaled up using the units in *PROPDMGEXP* and *CROPDMGEXP* respectively. We use the *recode* function of **car** package to perform the recoding of PROPDMGEXP and CROPDMGEXP.
+```{r eval=FALSE}
+# load car package
+library(car)
+```
+```{r cache=TRUE}
+# use PROPDMGEXP to get property damage costs
+df2$propdmgUnits <- recode(df2$PROPDMGEXP, " ''=0;'-'=0;'?'=0;'+'=0; '0'=0;'1'=10;'2'=100;
+                           '3'=1000;'4'=10000;'5'=100000;'6'=1000000;'7'=10000000;
+                           '8'=100000000;'B'=1000000000;'h'=100;'H'=100; 'k'=1000;
+                           'K'=1000;'m'=1000000;'M'=1000000", 
+                           as.factor.result = FALSE)
+df2$PROPDMG <- df2$PROPDMG * df2$propdmgUnits
+
+# use CROPDMGEXP to get crop damage costs
+df2$cropdmgUnits <- recode(df2$CROPDMGEXP, " ''=0;'-'=0;'?'=0;'+'=0; '0'=0;'1'=10;'2'=100;
+                           '3'=1000;'4'=10000;'5'=100000;'6'=1000000;'7'=10000000;
+                           '8'=100000000;'B'=1000000000;'h'=100;'H'=100; 'k'=1000;
+                           'K'=1000;'m'=1000000;'M'=1000000", 
+                           as.factor.result = FALSE)
+
+df2$PROPDMG <- df2$CROPDMG * df2$cropdmgUnits
+```
+### Data Analysis
+The study aims to assess the impact of adverse weather events on population health and the economic lossess associated. Using *ddply* function of **plyr** package, the fatalities, injuries and economic losses (property and crop damages) are summarized as total and mean as per event type.
+
+The National Safety Council in Estimating Cost of Unintentional Injuries gives the estimated economic cost of a fatality as $1,410,000 and that of injury as $78,900 [http://www.nsc.org/news_resources/injury_and_death_statistics/Pages/EstimatingtheCostsofUnintentionalInjuries.aspx]. We use these figures to calculate the holistic economical cost of an adverse weather event. We calculate both the total and mean costs. To assist in analysis, the economical costs are scaled by 1 billion.
+```{r cache=TRUE}
+# use plyr to summarize data as average and sum for fatalities, injury and damage
+# grouped per event type
+library(plyr)
+aggrByEvent = ddply(df2, .(EVTYPE), summarize, 
+                    meanFatalities = mean(FATALITIES), totalFatalities = sum(FATALITIES), 
+                    meanInjuries = mean(INJURIES), totalInjuries = sum(INJURIES), 
+                    meanPropdmg = mean(PROPDMG), totalPropdmg = sum(PROPDMG),
+                    meanCropdmg = mean(CROPDMG), totalCropdmg = sum(CROPDMG))
+
+# calculate total economic costs by combining cost of fatality/injury and crop/property
+# damage due to an adverse weather event
+costFatality <- 141000
+costInjury <- 78900
+aggrByEvent$totalEconomicCost <- (aggrByEvent$totalCropdmg + aggrByEvent$totalPropdmg + costFatality * aggrByEvent$totalFatalities + costInjury * aggrByEvent$totalInjuries)/1e9
+aggrByEvent$meanEconomicCost <- (aggrByEvent$meanCropdmg + aggrByEvent$meanPropdmg + costFatality * aggrByEvent$meanFatalities + costInjury * aggrByEvent$meanInjuries)/1e9
+```
+### Results
+The two research questions were as follows:
+
+1. Across the United States, which types of events are most harmful with respect to population health?
+
+2. Across the United States, which types of events have the greatest economic consequences?
+
+The first two figures depict the total and mean fatalities and injuries which happen during the adverse weather events. The list of events is sorted in descending order enabling us to find out the events which cause the most disruption in population health. Therefore, these two figures assist us in answering research question 1.
+
+The last figure depicts the total and mean economic costs of the adverse weather events. Again, the list of events is sorted in descending order enabling us to find out the events which cause the most economical loss. Thus, this figure assists us in answering research question 2.
+
+We limit the list of events to 10 for clarity of visualization and interpretaion. 
+```{r fig.height=12}
+# Top 10 event types
+n <- 10
+
+par(mfrow=c(2,1), mar=c(13,4,4,2))
+
+# total injuries
+plotdata <- aggrByEvent[order(aggrByEvent$totalInjuries, decreasing = T), ][1:n, ]
+plot(plotdata$totalInjuries, col = "red", type = "b", xaxt = "n", log='y', xlab = "", 
+     main = "Total Injuries for Top 10 Event Types", ylab = "Total Injuries")
+axis(1, labels = plotdata$EVTYPE, at = 1:length(plotdata$EVTYPE), las = 2, cex.axis = 0.8)
+
+# mean injuries
+plotdata <- aggrByEvent[order(aggrByEvent$meanInjuries, decreasing = T), ][1:n, ]
+plot(plotdata$meanInjuries, col = "red", type = "b", xaxt = "n", xlab = "", log='y',
+     main = "Mean Injuries for Top 10 Event Types", ylab = "Mean Injuries")
+axis(1, labels = plotdata$EVTYPE, at = 1:length(plotdata$EVTYPE), las = 2, cex.axis = 0.8)
+```
+```{r fig.height=12}
+par(mfrow=c(2,1), mar=c(13,4,4,2))
+
+# total fatalities
+plotdata <- aggrByEvent[order(aggrByEvent$totalFatalities, decreasing = T), ][1:n, ]
+plot(plotdata$totalFatalities, col = "red", type = "b", xaxt = "n", xlab = "", log='y',
+     main = "Total Fatalities for Top 10 Event Types", ylab = "Total Fatalities")
+axis(1, labels = plotdata$EVTYPE, at = 1:length(plotdata$EVTYPE), las = 2, cex.axis = 0.8)
+
+# mean fatalities
+plotdata <- aggrByEvent[order(aggrByEvent$meanFatalities, decreasing = T), ][1:n, ]
+plot(plotdata$meanFatalities, col = "red", type = "b", xaxt = "n", xlab = "", log='y',
+     main = "Mean Fatalities for Top 10 Event Types", ylab = "Mean Fatalities")
+axis(1, labels = plotdata$EVTYPE, at = 1:length(plotdata$EVTYPE), las = 2, cex.axis = 0.8)
+```
+```{r fig.height=12}
+par(mfrow=c(2,1), mar=c(13,4,4,2))
+
+# total economic cost   
+plotdata <- aggrByEvent[order(aggrByEvent$totalEconomicCost, decreasing = T), ][1:n, ]
+plot(plotdata$totalEconomicCost, col = "red", type = "b", log='y',
+     xaxt = "n", xlab = "", main = "Total Economic Cost for Top 10 Event Types", 
+     ylab = "Total Economic Cost (Billion USD)")
+axis(1, labels = plotdata$EVTYPE, at = 1:length(plotdata$EVTYPE), las = 2, cex.axis = 0.8)
+
+# mean economic cost
+plotdata <- aggrByEvent[order(aggrByEvent$meanEconomicCost, decreasing = T), ][1:n, ]
+plot(plotdata$meanEconomicCost, col = "red", type = "b", log='y',
+     xaxt = "n", xlab = "", main = "Mean Economic Cost for Top 10 Event Types", 
+     ylab = "Mean Economic Cost (Billion USD)")
+axis(1, labels = plotdata$EVTYPE, at = 1:length(plotdata$EVTYPE), las = 2, cex.axis = 0.8)
+```
+```
+We find that tornadoes have the maximum total number of casualties (both fatalities and injuries). However, tornadoes are ranked number three when we consider the total economic costs. The first two places are taken by drought and flood. A possible reason can be somewhat longer duration of drought or flood as compared to tornado. Due to the longer duration of the event, the extent of damage is much more leading to higher economic impact.
+```
